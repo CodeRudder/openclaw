@@ -1,6 +1,14 @@
-import { createPluginRuntimeStore } from "openclaw/plugin-sdk/compat";
-import type { PluginRuntime } from "openclaw/plugin-sdk/mattermost";
+import type { PluginRuntime } from "openclaw/plugin-sdk";
 
-const { setRuntime: setMattermostRuntime, getRuntime: getMattermostRuntime } =
-  createPluginRuntimeStore<PluginRuntime>("Mattermost runtime not initialized");
-export { getMattermostRuntime, setMattermostRuntime };
+let runtime: PluginRuntime | null = null;
+
+export function setMattermostRuntime(next: PluginRuntime) {
+  runtime = next;
+}
+
+export function getMattermostRuntime(): PluginRuntime {
+  if (!runtime) {
+    throw new Error("Mattermost runtime not initialized");
+  }
+  return runtime;
+}
