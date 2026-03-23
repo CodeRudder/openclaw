@@ -1326,7 +1326,13 @@ export async function runEmbeddedPiAgent(
             // Throw FailoverError for prompt-side failover reasons when fallbacks
             // are configured so outer model fallback can continue on overload,
             // rate-limit, auth, or billing failures.
-            if (fallbackConfigured && promptFailoverFailure) {
+            // Also throw for retryable errors (rate_limit, timeout, overloaded) even
+            // without fallback config, so the retry mechanism can work.
+            const isRetryableError =
+              promptFailoverReason === "rate_limit" ||
+              promptFailoverReason === "timeout" ||
+              promptFailoverReason === "overloaded";
+            if (promptFailoverFailure && (fallbackConfigured || isRetryableError)) {
               const status = resolveFailoverStatus(promptFailoverReason ?? "unknown");
               logPromptFailoverDecision("fallback_model", { status });
               await maybeBackoffBeforeOverloadFailover(promptFailoverReason);
@@ -1442,7 +1448,13 @@ export async function runEmbeddedPiAgent(
               continue;
             }
 
-            if (fallbackConfigured) {
+            // Throw FailoverError for retryable errors (rate_limit, timeout, overloaded)
+            // even without fallback config, so the retry mechanism can work.
+            const isRetryableError =
+              assistantFailoverReason === "rate_limit" ||
+              assistantFailoverReason === "timeout" ||
+              assistantFailoverReason === "overloaded";
+            if (fallbackConfigured || isRetryableError) {
               await maybeBackoffBeforeOverloadFailover(assistantFailoverReason);
               // Prefer formatted error message (user-friendly) over raw errorMessage
               const message =
