@@ -615,8 +615,8 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       // Group chat: add processing hints
       const isQueuedMessage = cleanedBodyText.includes("[Queued messages while agent was busy]");
       const groupHints = isQueuedMessage
-        ? `\n\n[群聊消息处理提示] 这是队列合并消息。忽略其它Agent的分析内容，只关注@你的原始消息。快速判断是否需要回复。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记，然后发送消息内容。\n\n`
-        : `[群聊消息处理提示] 忽略消息中其它Agent的分析过程，只关注与你相关的@消息或问题。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记，然后发送消息内容。\n\n`;
+        ? `\n\n[群聊消息处理提示] 这是队列合并消息。忽略其它Agent的分析内容，只关注@你的原始消息。快速判断是否需要回复。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记并@接收Agent，然后发送消息内容，发送完消息后继续处理未完成的任务。\n\n`
+        : `[群聊消息处理提示] 忽略消息中其它Agent的分析过程，只关注与你相关的@消息或问题。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记并@接收Agent，然后发送消息内容，发送完消息后继续处理未完成的任务。\n\n`;
 
       if (isQueuedMessage) {
         // Insert hints after "[Queued messages while agent was busy]" line
