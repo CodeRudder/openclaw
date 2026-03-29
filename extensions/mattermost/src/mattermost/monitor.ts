@@ -599,15 +599,15 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     });
     // Clean message content to prevent message loops
     // Also remove existing group hints and GROUP-CHAT markers to avoid duplication in queued messages
+    // Note: Keep @ characters to preserve complete mention information
     const cleanedBodyText = bodyText
-      .replace(/@/g, "")
       .replace(/NO_REPLY/g, "")
       .replace(/\[群聊消息处理提示\][^\n]*/g, "")
       .replace(/\[GROUP-CHAT\]\s*/g, "")
       .replace(/\n\n+/g, "\n\n")
       .trim();
-    const cleanedSenderName = senderName.replace(/@/g, "");
-    const cleanedRoomLabel = roomLabel.replace(/@/g, "");
+    const cleanedSenderName = senderName;
+    const cleanedRoomLabel = roomLabel;
 
     // Build body for agent with group chat context hints
     let bodyForAgentWithAccount: string;
@@ -666,7 +666,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
               entry.messageId ? ` [id:${entry.messageId} channel:${channelId}]` : ""
             }`,
             chatType,
-            senderLabel: entry.sender.replace(/@/g, ""),
+            senderLabel: entry.sender,
           }),
       });
     }
@@ -676,7 +676,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     const inboundHistory =
       historyKey && historyLimit > 0
         ? (channelHistories.get(historyKey) ?? []).map((entry) => ({
-            sender: entry.sender.replace(/@/g, ""),
+            sender: entry.sender,
             body: entry.body,
             timestamp: entry.timestamp,
           }))
