@@ -453,3 +453,114 @@ export function inferToolMetaFromArgs(toolName: string, args: unknown): string |
   const display = resolveToolDisplay({ name: toolName, args });
   return formatToolDetail(display);
 }
+
+/**
+ * Regex to match `<tool_call TOOL_NAME>...</tool_call >` XML blocks emitted
+ * by some providers (notably Zhipu AI / glm models) inside thinking text.
+ * These tool calls use `<arg_key KEY</arg_key >` / `<arg_value VALUE</arg_value >`
+ * pairs for parameters.
+ */
+const TOOL_CALL_XML_RE = /<tool_call\s+(\w+)[^>]*>([\s\S]*?)<\/tool_call\s*>/g;
+const ARG_PAIR_RE =
+  /<arg_key\s+([\s\S]*?)<\/arg_key\s*>\s*<arg_value\s+([\s\S]*?)<\/arg_value\s*>/g;
+
+interface ExtractedToolCall {
+  toolName: string;
+  input: Record<string, string>;
+}
+
+/**
+ * Parse tool calls embedded as XML in thinking text.
+ * Returns an array of extracted tool calls with their name and input arguments.
+ */
+export function extractToolCallsFromThinkingText(text: string): ExtractedToolCall[] {
+  if (!text) {
+    return [];
+  }
+  const calls: ExtractedToolCall[] = [];
+  for (const match of text.matchAll(TOOL_CALL_XML_RE)) {
+    const toolName = match[1].trim();
+    const body = match[2];
+    const input: Record<string, string> = {};
+    for (const argMatch of body.matchAll(ARG_PAIR_RE)) {
+      const key = argMatch[1].trim();
+      const value = argMatch[2].trim();
+      if (key) {
+        input[key] = value;
+      }
+    }
+    calls.push({ toolName, input });
+  }
+  return calls;
+}
+
+const TOOL_CALL_TYPES = new Set(["toolCall", "toolUse", "functionCall"]);
+
+/**
+ * Promote tool calls embedded in thinking text to proper structured `toolUse`
+ * content blocks.  Some providers (notably Zhipu AI / glm models with extended
+ * thinking) emit tool calls as XML text inside thinking blocks instead of as
+ * structured content blocks.  Without this normalization the tool calls are
+ * silently ignored and the agent appears to stop responding.
+ *
+ * This mirrors the existing `promoteThinkingTagsToBlocks` pattern.
+ */
+export function promoteThinkingToolCalls(message: AssistantMessage): void {
+  if (!Array.isArray(message.content)) {
+    return;
+  }
+  // If the message already has structured tool calls, nothing to do.
+  const hasToolBlock = message.content.some(
+    (block) =>
+      block &&
+      typeof block === "object" &&
+      "type" in block &&
+      TOOL_CALL_TYPES.has(block.type as string),
+  );
+  if (hasToolBlock) {
+    return;
+  }
+  // Find thinking blocks with embedded tool calls.
+  const next: AssistantMessage["content"] = [];
+  let changed = false;
+
+  for (const block of message.content) {
+    if (!block || typeof block !== "object" || !("type" in block) || block.type !== "thinking") {
+      next.push(block);
+      continue;
+    }
+    const thinkingText = (block as { thinking?: string }).thinking ?? "";
+    const toolCalls = extractToolCallsFromThinkingText(thinkingText);
+    if (toolCalls.length === 0) {
+      next.push(block);
+      continue;
+    }
+    changed = true;
+    // Split thinking text: keep reasoning before the first <tool_call as thinking.
+    const firstCallIdx = thinkingText.indexOf("<tool_call");
+    if (firstCallIdx > 0) {
+      const before = thinkingText.slice(0, firstCallIdx).trim();
+      if (before) {
+        next.push({ type: "thinking", thinking: before });
+      }
+    }
+    // Add each extracted tool call as a proper toolCall content block.
+    for (const tc of toolCalls) {
+      next.push({
+        type: "toolCall",
+        id: `call_${Math.random().toString(16).slice(2, 11)}`,
+        name: tc.toolName,
+        arguments: tc.input,
+      });
+    }
+  }
+
+  if (!changed) {
+    return;
+  }
+  message.content = next;
+  // Signal the tool execution loop that tools need to be executed.
+  if (message.stopReason === "stop") {
+    message.stopReason = "toolUse";
+  }
+}
