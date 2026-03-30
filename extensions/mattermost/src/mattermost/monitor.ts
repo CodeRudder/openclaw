@@ -785,37 +785,14 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           const mediaUrls = payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : []);
           let text = core.channel.text.convertMarkdownTables(payload.text ?? "", tableMode);
 
-          // Group chat prefix check: [GROUP-CHAT] must appear on the first line.
-          // Use firstLine.includes() because responsePrefix from prefixOptions
-          // may be prepended to payload.text before deliver() is called.
+          // Group chat: block auto-extracted replies — only message tool sends to groups.
           const isGroupChat = kind !== "direct";
-          const GROUP_CHAT_PREFIX = "[GROUP-CHAT]";
-          console.log(
-            `[GROUP-CHAT-DEBUG] deliver called: isGroupChat=${isGroupChat} textLen=${text.length} firstLine="${(text.split("\n")[0] ?? "").substring(0, 120)}"`,
-          );
           if (isGroupChat) {
-            const firstLine = text.split("\n")[0] ?? "";
-            if (firstLine.includes(GROUP_CHAT_PREFIX)) {
-              // Strip the prefix and continue
-              text = text.replace(GROUP_CHAT_PREFIX, "").trim();
-              console.log(
-                `[GROUP-CHAT-DEBUG] prefix found, stripped. new text preview: "${text.substring(0, 80)}"`,
-              );
-            } else {
-              // No prefix on first line - drop the message (prevent accidental content leakage to group chats)
-              if (mediaUrls.length === 0) {
-                console.log(
-                  `[GROUP-CHAT-DEBUG] DROPPED: no prefix on first line, text preview: "${text.substring(0, 120)}"`,
-                );
-                runtime.log?.(
-                  `dropped group chat message without ${GROUP_CHAT_PREFIX} prefix on first line`,
-                );
-                return;
-              }
-              // If there's media, send media only (no text)
-              console.log(`[GROUP-CHAT-DEBUG] has media but no prefix, clearing text`);
-              text = "";
-            }
+            console.log(
+              `[GROUP-CHAT-DEBUG] deliver BLOCKED: auto-extracted reply dropped for group chat, text preview: "${text.substring(0, 120)}"`,
+            );
+            runtime.log?.(`dropped auto-extracted group chat reply`);
+            return;
           }
 
           if (mediaUrls.length === 0) {

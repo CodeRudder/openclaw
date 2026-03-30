@@ -283,25 +283,9 @@ export const mattermostPlugin: ChannelPlugin<ResolvedMattermostAccount> = {
       return { ok: true, to: trimmed };
     },
     sendText: async ({ to, text, accountId, replyToId }) => {
-      // Group chat filter: channel: targets require [GROUP-CHAT] prefix on first line
-      const GROUP_CHAT_PREFIX = "[GROUP-CHAT]";
-      let filteredText = text;
-      if (to.startsWith("channel:")) {
-        const firstLine = (filteredText ?? "").split("\n")[0] ?? "";
-        if (firstLine.includes(GROUP_CHAT_PREFIX)) {
-          filteredText = filteredText.replace(GROUP_CHAT_PREFIX, "").trim();
-          console.log(`[SEND-DEBUG] outbound sendText: prefix stripped, to=${to}`);
-        } else {
-          console.log(
-            `[SEND-DEBUG] outbound sendText: BLOCKED no [GROUP-CHAT] prefix, to=${to} preview="${(filteredText ?? "").substring(0, 80).replace(/\n/g, "\\n")}"`,
-          );
-          return {
-            channel: "mattermost",
-            messageId: "blocked",
-            channelId: to.slice("channel:".length),
-          };
-        }
-      }
+      // Message tool sends are always allowed through — no group chat prefix check.
+      // Strip [GROUP-CHAT] prefix if present but never block.
+      let filteredText = (text ?? "").replace("[GROUP-CHAT]", "").trim();
       const result = await sendMessageMattermost(to, filteredText, {
         accountId: accountId ?? undefined,
         replyToId: replyToId ?? undefined,
@@ -309,18 +293,8 @@ export const mattermostPlugin: ChannelPlugin<ResolvedMattermostAccount> = {
       return { channel: "mattermost", ...result };
     },
     sendMedia: async ({ to, text, mediaUrl, accountId, replyToId }) => {
-      // Group chat filter: channel: targets require [GROUP-CHAT] prefix on first line (text only; media always allowed)
-      const GROUP_CHAT_PREFIX = "[GROUP-CHAT]";
-      let filteredText = text;
-      if (to.startsWith("channel:") && filteredText) {
-        const firstLine = filteredText.split("\n")[0] ?? "";
-        if (firstLine.includes(GROUP_CHAT_PREFIX)) {
-          filteredText = filteredText.replace(GROUP_CHAT_PREFIX, "").trim();
-        } else {
-          console.log(`[SEND-DEBUG] outbound sendMedia: no prefix, clearing text, to=${to}`);
-          filteredText = "";
-        }
-      }
+      // Message tool sends are always allowed through — no group chat prefix check.
+      let filteredText = (text ?? "").replace("[GROUP-CHAT]", "").trim();
       const result = await sendMessageMattermost(to, filteredText, {
         accountId: accountId ?? undefined,
         mediaUrl,
