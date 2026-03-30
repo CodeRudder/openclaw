@@ -780,4 +780,97 @@ describe("promoteThinkingToolCalls", () => {
     expect(toolBlock.name).toBe("bash");
     expect(msg.stopReason).toBe("toolUse");
   });
+
+  it("promotes real Zhipu AI thinking-embedded tool call (message tool)", () => {
+    // Exact format from Zhipu AI glm-5-pool with extended thinking
+    const zhipuThinking =
+      "I need to send a message to the Mattermost channel.\n\n" +
+      "<tool_call message>\n" +
+      "<arg_key action</arg_key >\n" +
+      "<arg_value send</arg_value >\n" +
+      "<arg_key channel</arg_key >\n" +
+      "<arg_value mattermost</arg_value >\n" +
+      "<arg_key message</arg_key >\n" +
+      "<arg_value [GROUP-CHAT] @claw-admin hello world</arg_value >\n" +
+      "<arg_key target</arg_key >\n" +
+      "<arg_value channel:3wo4cnz1ypgbxffdn8kqz35jpy</arg_value >\n" +
+      "</tool_call >";
+
+    const msg = makeAssistantMessage({
+      content: [
+        {
+          type: "thinking",
+          thinking: zhipuThinking,
+          thinkingSignature: "",
+        },
+      ],
+      stopReason: "stop",
+    });
+
+    // Simulate what handleMessageEnd does
+    promoteThinkingToolCalls(msg);
+
+    // Verify: agent loop would detect tool calls
+    // (mirrors pi-agent-core runLoop: message.content.filter(c => c.type === "toolCall"))
+    const toolCalls = msg.content.filter((c) => c.type === "toolCall");
+    expect(toolCalls).toHaveLength(1);
+    expect(msg.stopReason).toBe("toolUse");
+
+    // Verify reasoning preserved
+    const thinkingBlock = msg.content.find((c) => c.type === "thinking");
+    expect(thinkingBlock).toBeDefined();
+    const thinkingText = (thinkingBlock as { thinking?: string }).thinking;
+    expect(thinkingText).toContain("I need to send a message");
+
+    // Verify tool call arguments
+    const tc = toolCalls[0] as { name: string; arguments: Record<string, string> };
+    expect(tc.name).toBe("message");
+    expect(tc.arguments.action).toBe("send");
+    expect(tc.arguments.channel).toBe("mattermost");
+    expect(tc.arguments.message).toBe("[GROUP-CHAT] @claw-admin hello world");
+    expect(tc.arguments.target).toBe("channel:3wo4cnz1ypgbxffdn8kqz35jpy");
+    // Verify generated ID
+    expect((tc as { id: string }).id).toMatch(/^call_[0-9a-f]+$/);
+  });
+
+  it("simulates agent loop flow: promote → tool call detection", () => {
+    // This test simulates the full flow in pi-agent-core's agent-loop.js runLoop():
+    // 1. streamAssistantResponse returns the finalMessage
+    // 2. _processLoopEvent calls our handleMessageEnd which calls promoteThinkingToolCalls
+    // 3. runLoop checks: message.content.filter(c => c.type === "toolCall")
+    // 4. If toolCalls.length > 0, executeToolCalls is called
+
+    const finalMessage = makeAssistantMessage({
+      content: [
+        {
+          type: "thinking",
+          thinking:
+            "Let me use the message tool.\n" +
+            "<tool_call message>\n" +
+            "<arg_key action</arg_key >\n" +
+            "<arg_value send</arg_value >\n" +
+            "<arg_key channel</arg_key >\n" +
+            "<arg_value discord</arg_value >\n" +
+            "<arg_key message</arg_key >\n" +
+            "<arg_value Hello from agent</arg_value >\n" +
+            "</tool_call >",
+          thinkingSignature: "",
+        },
+      ],
+      stopReason: "stop",
+    });
+
+    // Step 1: simulate _processLoopEvent → handleMessageEnd → promoteThinkingToolCalls
+    promoteThinkingToolCalls(finalMessage);
+
+    // Step 2: simulate runLoop tool call detection
+    // (from agent-loop.js line 112: const toolCalls = message.content.filter((c) => c.type === "toolCall"))
+    const toolCalls = finalMessage.content.filter((c) => c.type === "toolCall");
+    const hasMoreToolCalls = toolCalls.length > 0;
+
+    expect(hasMoreToolCalls).toBe(true);
+    expect(finalMessage.stopReason).not.toBe("error");
+    expect(finalMessage.stopReason).not.toBe("aborted");
+    // Agent loop would proceed to executeToolCalls()
+  });
 });
