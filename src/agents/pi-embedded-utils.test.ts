@@ -2,8 +2,10 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
   extractAssistantText,
+  extractToolCallsFromThinkingText,
   formatReasoningMessage,
   promoteThinkingTagsToBlocks,
+  promoteThinkingToolCalls,
   stripDowngradedToolCallText,
 } from "./pi-embedded-utils.js";
 
@@ -603,5 +605,179 @@ describe("empty input handling", () => {
     for (const helper of helpers) {
       expect(helper("")).toBe("");
     }
+  });
+});
+
+describe("extractToolCallsFromThinkingText", () => {
+  it("extracts a single tool call with arg_key/arg_value pairs", () => {
+    const text =
+      "Let me send a message.\n" +
+      "<tool_call message>\n" +
+      "<arg_key action</arg_key >\n" +
+      "<arg_value send</arg_value >\n" +
+      "<arg_key channel</arg_key >\n" +
+      "<arg_value mattermost</arg_value >\n" +
+      "<arg_key target</arg_key >\n" +
+      "<arg_value channel:abc123</arg_value >\n" +
+      "</tool_call >";
+    const calls = extractToolCallsFromThinkingText(text);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].toolName).toBe("message");
+    expect(calls[0].input).toEqual({
+      action: "send",
+      channel: "mattermost",
+      target: "channel:abc123",
+    });
+  });
+
+  it("extracts tool call with multi-line message content", () => {
+    const text =
+      "<tool_call message>\n" +
+      "<arg_key action</arg_key >\n" +
+      "<arg_value send</arg_value >\n" +
+      "<arg_key message</arg_key >\n" +
+      "<arg_value Hello\nWorld\nLine 3</arg_value >\n" +
+      "</tool_call >";
+    const calls = extractToolCallsFromThinkingText(text);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].input.message).toBe("Hello\nWorld\nLine 3");
+  });
+
+  it("returns empty array for text without tool calls", () => {
+    const calls = extractToolCallsFromThinkingText("Just some reasoning text.");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("returns empty array for empty string", () => {
+    const calls = extractToolCallsFromThinkingText("");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("extracts multiple tool calls", () => {
+    const text =
+      "<tool_call tool_a>\n" +
+      "<arg_key key1</arg_key >\n" +
+      "<arg_value val1</arg_value >\n" +
+      "</tool_call >\n" +
+      "<tool_call tool_b>\n" +
+      "<arg_key key2</arg_key >\n" +
+      "<arg_value val2</arg_value >\n" +
+      "</tool_call >";
+    const calls = extractToolCallsFromThinkingText(text);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].toolName).toBe("tool_a");
+    expect(calls[1].toolName).toBe("tool_b");
+  });
+});
+
+describe("promoteThinkingToolCalls", () => {
+  it("promotes tool calls from thinking-only message", () => {
+    const msg = makeAssistantMessage({
+      content: [
+        {
+          type: "thinking",
+          thinking:
+            "I should send a message.\n" +
+            "<tool_call message>\n" +
+            "<arg_key action</arg_key >\n" +
+            "<arg_value send</arg_value >\n" +
+            "<arg_key channel</arg_key >\n" +
+            "<arg_value mattermost</arg_value >\n" +
+            "<arg_key target</arg_key >\n" +
+            "<arg_value channel:abc123</arg_value >\n" +
+            "</tool_call >",
+          thinkingSignature: "",
+        },
+      ],
+      stopReason: "stop",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    // Should have: [thinking(reasoning), toolUse]
+    expect(msg.content).toHaveLength(2);
+    expect(msg.content[0]).toEqual({ type: "thinking", thinking: "I should send a message." });
+    const toolBlock = msg.content[1] as {
+      type: string;
+      name: string;
+      arguments: Record<string, string>;
+    };
+    expect(toolBlock.type).toBe("toolCall");
+    expect(toolBlock.name).toBe("message");
+    expect(toolBlock.arguments).toEqual({
+      action: "send",
+      channel: "mattermost",
+      target: "channel:abc123",
+    });
+    expect(msg.stopReason).toBe("toolUse");
+  });
+
+  it("does not modify messages that already have toolCall blocks", () => {
+    const originalContent = [
+      { type: "thinking" as const, thinking: "reasoning", thinkingSignature: "" },
+      { type: "toolCall" as const, id: "call_123", name: "tool", arguments: {} },
+    ];
+    const msg = makeAssistantMessage({
+      content: originalContent,
+      stopReason: "toolUse",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    expect(msg.content).toBe(originalContent);
+    expect(msg.stopReason).toBe("toolUse");
+  });
+
+  it("does not modify thinking blocks without tool calls", () => {
+    const originalContent = [
+      { type: "thinking" as const, thinking: "Just reasoning", thinkingSignature: "" },
+    ];
+    const msg = makeAssistantMessage({
+      content: originalContent,
+      stopReason: "stop",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    expect(msg.content).toBe(originalContent);
+    expect(msg.stopReason).toBe("stop");
+  });
+
+  it("does not modify text-only messages", () => {
+    const originalContent = [{ type: "text" as const, text: "Hello" }];
+    const msg = makeAssistantMessage({
+      content: originalContent,
+      stopReason: "stop",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    expect(msg.content).toBe(originalContent);
+  });
+
+  it("handles tool call at the start of thinking text (no preceding reasoning)", () => {
+    const msg = makeAssistantMessage({
+      content: [
+        {
+          type: "thinking",
+          thinking:
+            "<tool_call bash>\n" +
+            "<arg_key command</arg_key >\n" +
+            "<arg_value echo hello</arg_value >\n" +
+            "</tool_call >",
+          thinkingSignature: "",
+        },
+      ],
+      stopReason: "stop",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    // Only the toolCall block, no empty thinking before it
+    expect(msg.content).toHaveLength(1);
+    const toolBlock = msg.content[0] as { type: string; name: string };
+    expect(toolBlock.type).toBe("toolCall");
+    expect(toolBlock.name).toBe("bash");
+    expect(msg.stopReason).toBe("toolUse");
   });
 });

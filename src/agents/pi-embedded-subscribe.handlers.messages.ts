@@ -16,6 +16,7 @@ import {
   extractThinkingFromTaggedText,
   formatReasoningMessage,
   promoteThinkingTagsToBlocks,
+  promoteThinkingToolCalls,
 } from "./pi-embedded-utils.js";
 
 const stripTrailingDirective = (text: string): string => {
@@ -268,6 +269,7 @@ export function handleMessageEnd(
     return;
   }
   promoteThinkingTagsToBlocks(assistantMessage);
+  promoteThinkingToolCalls(assistantMessage);
 
   const rawText = extractAssistantText(assistantMessage);
   appendRawStream({
