@@ -1,6 +1,9 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import { extractTextFromChatContent } from "../shared/chat-content.js";
+
+const log = createSubsystemLogger("agent/utils");
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { sanitizeUserFacingText } from "./pi-embedded-helpers.js";
 import { formatToolDetail, resolveToolDisplay } from "./tool-display.js";
@@ -536,6 +539,9 @@ export function promoteThinkingToolCalls(message: AssistantMessage): void {
       continue;
     }
     changed = true;
+    log.info(
+      `promoteThinkingToolCalls: found ${toolCalls.length} embedded tool call(s) in thinking text: ${toolCalls.map((tc) => tc.toolName).join(", ")}`,
+    );
     // Split thinking text: keep reasoning before the first <tool_call as thinking.
     const firstCallIdx = thinkingText.indexOf("<tool_call");
     if (firstCallIdx > 0) {
@@ -546,6 +552,9 @@ export function promoteThinkingToolCalls(message: AssistantMessage): void {
     }
     // Add each extracted tool call as a proper toolCall content block.
     for (const tc of toolCalls) {
+      log.info(
+        `promoteThinkingToolCalls: promoting toolCall name=${tc.toolName} args=${JSON.stringify(tc.input).slice(0, 200)}`,
+      );
       next.push({
         type: "toolCall",
         id: `call_${Math.random().toString(16).slice(2, 11)}`,
@@ -563,4 +572,7 @@ export function promoteThinkingToolCalls(message: AssistantMessage): void {
   if (message.stopReason === "stop") {
     message.stopReason = "toolUse";
   }
+  log.info(
+    `promoteThinkingToolCalls: promoted ${next.filter((b) => b && typeof b === "object" && "type" in b && b.type === "toolCall").length} toolCall(s), stopReason="${message.stopReason}"`,
+  );
 }
