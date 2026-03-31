@@ -24,6 +24,20 @@ describe("Zhipu AI error detection", () => {
       const message = "请您控制请求频率";
       expect(isRateLimitErrorMessage(message)).toBe(true);
     });
+
+    it("should detect JSON format rate limit error with code 1302", () => {
+      const message =
+        '{"error":{"code":"1302","message":"您的账户已达到速率限制，请您控制请求频率"},"request_id":"20260331155218c06708d0bc0445f5"}';
+      expect(isRateLimitErrorMessage(message)).toBe(true);
+      expect(classifyFailoverReason(message)).toBe("rate_limit");
+    });
+
+    it("should detect JSON format with code 1302 even without Chinese text", () => {
+      const message =
+        '{"error":{"code":"1302","message":"Rate limit exceeded"},"request_id":"test123"}';
+      expect(isRateLimitErrorMessage(message)).toBe(true);
+      expect(classifyFailoverReason(message)).toBe("rate_limit");
+    });
   });
 
   describe("network and timeout errors", () => {
