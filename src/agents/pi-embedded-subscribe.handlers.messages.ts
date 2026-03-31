@@ -66,13 +66,14 @@ export function handleMessageStart(
     return;
   }
 
+  console.log(`[HANDLE-MESSAGE-START] new assistant message starting`);
   // KNOWN: Resetting at `text_end` is unsafe (late/duplicate end events).
   // ASSUME: `message_start` is the only reliable boundary for “new assistant message begins”.
   // Start-of-message is a safer reset point than message_end: some providers
   // may deliver late text_end updates after message_end, which would otherwise
   // re-trigger block replies.
   ctx.resetAssistantMessageState(ctx.state.assistantTexts.length);
-  // Use assistant message_start as the earliest "writing" signal for typing.
+  // Use assistant message_start as the earliest “writing” signal for typing.
   void ctx.params.onAssistantMessageStart?.();
 }
 
@@ -104,6 +105,9 @@ export function handleMessageUpdate(
     const thinkingDelta = typeof assistantRecord?.delta === "string" ? assistantRecord.delta : "";
     const thinkingContent =
       typeof assistantRecord?.content === "string" ? assistantRecord.content : "";
+    console.log(
+      `[HANDLE-MESSAGE-UPDATE] thinking event type=${evtType} deltaLen=${thinkingDelta.length} contentLen=${thinkingContent.length} contentPreview="${thinkingContent.substring(0, 150)}"`,
+    );
     appendRawStream({
       ts: Date.now(),
       event: "assistant_thinking_stream",
@@ -268,8 +272,16 @@ export function handleMessageEnd(
   if (ctx.state.deterministicApprovalPromptSent) {
     return;
   }
+  console.log(
+    `[HANDLE-MESSAGE-END] stopReason="${assistantMessage.stopReason}" contentBlocks=${assistantMessage.content.length} types=${assistantMessage.content.map((b) => (b && typeof b === "object" && "type" in b ? b.type : "unknown")).join(",")}`,
+  );
   promoteThinkingTagsToBlocks(assistantMessage);
+  console.log(`[HANDLE-MESSAGE-END] about to call promoteThinkingToolCalls`);
   promoteThinkingToolCalls(assistantMessage);
+  console.log(`[HANDLE-MESSAGE-END] promoteThinkingToolCalls returned`);
+  console.log(
+    `[HANDLE-MESSAGE-END] after promote stopReason="${assistantMessage.stopReason}" contentBlocks=${assistantMessage.content.length} types=${assistantMessage.content.map((b) => (b && typeof b === "object" && "type" in b ? b.type : "unknown")).join(",")}`,
+  );
 
   const rawText = extractAssistantText(assistantMessage);
   appendRawStream({

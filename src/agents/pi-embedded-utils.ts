@@ -463,9 +463,12 @@ export function inferToolMetaFromArgs(toolName: string, args: unknown): string |
  * These tool calls use `<arg_key KEY</arg_key >` / `<arg_value VALUE</arg_value >`
  * pairs for parameters.
  */
-const TOOL_CALL_XML_RE = /<tool_call\s+(\w+)[^>]*>([\s\S]*?)<\/tool_call\s*>/g;
+// Match two formats:
+// 1. <tool_call TOOL_NAME>...</tool_call> (tool name as attribute)
+// 2. <tool_call>TOOL_NAME<arg_key>...</arg_key>...</tool_call> (tool name as first content)
+const TOOL_CALL_XML_RE = /<tool_call[^>]*>([\s\S]*?)<\/tool_call\s*>/g;
 const ARG_PAIR_RE =
-  /<arg_key\s+([\s\S]*?)<\/arg_key\s*>\s*<arg_value\s+([\s\S]*?)<\/arg_value\s*>/g;
+  /<arg_key[^>]*>([\s\S]*?)<\/arg_key\s*>\s*<arg_value[^>]*>([\s\S]*?)<\/arg_value\s*>/g;
 
 interface ExtractedToolCall {
   toolName: string;
@@ -475,15 +478,43 @@ interface ExtractedToolCall {
 /**
  * Parse tool calls embedded as XML in thinking text.
  * Returns an array of extracted tool calls with their name and input arguments.
+ *
+ * Supports two formats:
+ * 1. <tool_call TOOL_NAME>...</tool_call> (tool name as attribute in opening tag)
+ * 2. <tool_call>TOOL_NAME<arg_key>...</arg_key>...</tool_call> (tool name as first text content)
  */
 export function extractToolCallsFromThinkingText(text: string): ExtractedToolCall[] {
   if (!text) {
     return [];
   }
   const calls: ExtractedToolCall[] = [];
+  console.log(
+    `[extractToolCallsFromThinkingText] input text length=${text.length} preview="${text.substring(0, 200)}"`,
+  );
+
   for (const match of text.matchAll(TOOL_CALL_XML_RE)) {
-    const toolName = match[1].trim();
-    const body = match[2];
+    const fullMatch = match[0];
+    const body = match[1];
+    console.log(
+      `[extractToolCallsFromThinkingText] found match fullMatch="${fullMatch.substring(0, 150)}" body="${body.substring(0, 100)}"`,
+    );
+
+    // Try to extract tool name from opening tag attribute first
+    const tagMatch = fullMatch.match(/<tool_call\s+(\w+)[^>]*>/);
+    let toolName = tagMatch ? tagMatch[1].trim() : "";
+
+    // If no tool name in tag, extract from body content (before first <arg_key)
+    if (!toolName) {
+      const bodyBeforeArgs = body.split(/<arg_key/)[0];
+      toolName = bodyBeforeArgs.trim();
+      console.log(`[extractToolCallsFromThinkingText] extracted toolName from body: "${toolName}"`);
+    }
+
+    if (!toolName) {
+      console.log(`[extractToolCallsFromThinkingText] no toolName found, skipping`);
+      continue;
+    }
+
     const input: Record<string, string> = {};
     for (const argMatch of body.matchAll(ARG_PAIR_RE)) {
       const key = argMatch[1].trim();
@@ -492,8 +523,12 @@ export function extractToolCallsFromThinkingText(text: string): ExtractedToolCal
         input[key] = value;
       }
     }
+    console.log(
+      `[extractToolCallsFromThinkingText] extracted toolName="${toolName}" args=${JSON.stringify(input).substring(0, 100)}`,
+    );
     calls.push({ toolName, input });
   }
+  console.log(`[extractToolCallsFromThinkingText] returning ${calls.length} call(s)`);
   return calls;
 }
 
@@ -509,7 +544,11 @@ const TOOL_CALL_TYPES = new Set(["toolCall", "toolUse", "functionCall"]);
  * This mirrors the existing `promoteThinkingTagsToBlocks` pattern.
  */
 export function promoteThinkingToolCalls(message: AssistantMessage): void {
+  console.log(
+    `[promoteThinkingToolCalls] called with stopReason="${message.stopReason}" contentBlocks=${message.content.length}`,
+  );
   if (!Array.isArray(message.content)) {
+    console.log(`[promoteThinkingToolCalls] content is not array, returning`);
     return;
   }
   // If the message already has structured tool calls, nothing to do.
@@ -521,6 +560,7 @@ export function promoteThinkingToolCalls(message: AssistantMessage): void {
       TOOL_CALL_TYPES.has(block.type as string),
   );
   if (hasToolBlock) {
+    console.log(`[promoteThinkingToolCalls] already has tool block, returning`);
     return;
   }
   // Find thinking blocks with embedded tool calls.
@@ -533,8 +573,12 @@ export function promoteThinkingToolCalls(message: AssistantMessage): void {
       continue;
     }
     const thinkingText = (block as { thinking?: string }).thinking ?? "";
+    console.log(
+      `[promoteThinkingToolCalls] processing thinking block, text length=${thinkingText.length} preview="${thinkingText.substring(0, 150)}"`,
+    );
     const toolCalls = extractToolCallsFromThinkingText(thinkingText);
     if (toolCalls.length === 0) {
+      console.log(`[promoteThinkingToolCalls] no tool calls found in thinking block`);
       next.push(block);
       continue;
     }

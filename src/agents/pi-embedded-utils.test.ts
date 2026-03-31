@@ -613,13 +613,13 @@ describe("extractToolCallsFromThinkingText", () => {
     const text =
       "Let me send a message.\n" +
       "<tool_call message>\n" +
-      "<arg_key action</arg_key >\n" +
-      "<arg_value send</arg_value >\n" +
-      "<arg_key channel</arg_key >\n" +
-      "<arg_value mattermost</arg_value >\n" +
-      "<arg_key target</arg_key >\n" +
-      "<arg_value channel:abc123</arg_value >\n" +
-      "</tool_call >";
+      "<arg_key>action</arg_key>\n" +
+      "<arg_value>send</arg_value>\n" +
+      "<arg_key>channel</arg_key>\n" +
+      "<arg_value>mattermost</arg_value>\n" +
+      "<arg_key>target</arg_key>\n" +
+      "<arg_value>channel:abc123</arg_value>\n" +
+      "</tool_call>";
     const calls = extractToolCallsFromThinkingText(text);
     expect(calls).toHaveLength(1);
     expect(calls[0].toolName).toBe("message");
@@ -633,11 +633,11 @@ describe("extractToolCallsFromThinkingText", () => {
   it("extracts tool call with multi-line message content", () => {
     const text =
       "<tool_call message>\n" +
-      "<arg_key action</arg_key >\n" +
-      "<arg_value send</arg_value >\n" +
-      "<arg_key message</arg_key >\n" +
-      "<arg_value Hello\nWorld\nLine 3</arg_value >\n" +
-      "</tool_call >";
+      "<arg_key>action</arg_key>\n" +
+      "<arg_value>send</arg_value>\n" +
+      "<arg_key>message</arg_key>\n" +
+      "<arg_value>Hello\nWorld\nLine 3</arg_value>\n" +
+      "</tool_call>";
     const calls = extractToolCallsFromThinkingText(text);
     expect(calls).toHaveLength(1);
     expect(calls[0].input.message).toBe("Hello\nWorld\nLine 3");
@@ -656,13 +656,13 @@ describe("extractToolCallsFromThinkingText", () => {
   it("extracts multiple tool calls", () => {
     const text =
       "<tool_call tool_a>\n" +
-      "<arg_key key1</arg_key >\n" +
-      "<arg_value val1</arg_value >\n" +
-      "</tool_call >\n" +
+      "<arg_key>key1</arg_key>\n" +
+      "<arg_value>val1</arg_value>\n" +
+      "</tool_call>\n" +
       "<tool_call tool_b>\n" +
-      "<arg_key key2</arg_key >\n" +
-      "<arg_value val2</arg_value >\n" +
-      "</tool_call >";
+      "<arg_key>key2</arg_key>\n" +
+      "<arg_value>val2</arg_value>\n" +
+      "</tool_call>";
     const calls = extractToolCallsFromThinkingText(text);
     expect(calls).toHaveLength(2);
     expect(calls[0].toolName).toBe("tool_a");
@@ -679,13 +679,13 @@ describe("promoteThinkingToolCalls", () => {
           thinking:
             "I should send a message.\n" +
             "<tool_call message>\n" +
-            "<arg_key action</arg_key >\n" +
-            "<arg_value send</arg_value >\n" +
-            "<arg_key channel</arg_key >\n" +
-            "<arg_value mattermost</arg_value >\n" +
-            "<arg_key target</arg_key >\n" +
-            "<arg_value channel:abc123</arg_value >\n" +
-            "</tool_call >",
+            "<arg_key>action</arg_key>\n" +
+            "<arg_value>send</arg_value>\n" +
+            "<arg_key>channel</arg_key>\n" +
+            "<arg_value>mattermost</arg_value>\n" +
+            "<arg_key>target</arg_key>\n" +
+            "<arg_value>channel:abc123</arg_value>\n" +
+            "</tool_call>",
           thinkingSignature: "",
         },
       ],
@@ -786,15 +786,15 @@ describe("promoteThinkingToolCalls", () => {
     const zhipuThinking =
       "I need to send a message to the Mattermost channel.\n\n" +
       "<tool_call message>\n" +
-      "<arg_key action</arg_key >\n" +
-      "<arg_value send</arg_value >\n" +
-      "<arg_key channel</arg_key >\n" +
-      "<arg_value mattermost</arg_value >\n" +
-      "<arg_key message</arg_key >\n" +
-      "<arg_value [GROUP-CHAT] @claw-admin hello world</arg_value >\n" +
-      "<arg_key target</arg_key >\n" +
-      "<arg_value channel:3wo4cnz1ypgbxffdn8kqz35jpy</arg_value >\n" +
-      "</tool_call >";
+      "<arg_key>action</arg_key>\n" +
+      "<arg_value>send</arg_value>\n" +
+      "<arg_key>channel</arg_key>\n" +
+      "<arg_value>mattermost</arg_value>\n" +
+      "<arg_key>message</arg_key>\n" +
+      "<arg_value>[GROUP-CHAT] @claw-admin hello world</arg_value>\n" +
+      "<arg_key>target</arg_key>\n" +
+      "<arg_value>channel:3wo4cnz1ypgbxffdn8kqz35jpy</arg_value>\n" +
+      "</tool_call>";
 
     const msg = makeAssistantMessage({
       content: [
@@ -872,5 +872,33 @@ describe("promoteThinkingToolCalls", () => {
     expect(finalMessage.stopReason).not.toBe("error");
     expect(finalMessage.stopReason).not.toBe("aborted");
     // Agent loop would proceed to executeToolCalls()
+  });
+
+  it("promotes Zhipu format: tool name in content (not attribute)", () => {
+    // Real Zhipu format: <tool_call>TOOL_NAME<arg_key>...</arg_key>...</tool_call>
+    const msg = makeAssistantMessage({
+      content: [
+        {
+          type: "thinking",
+          thinking:
+            "Let me check the directory.\n" +
+            "<tool_call>exec<arg_key>command</arg_key><arg_value>ls -la /home/gongdewei/work/projects/dev-working-group/ | grep agent</arg_value></tool_call>",
+          thinkingSignature: "",
+        },
+      ],
+      stopReason: "stop",
+    });
+
+    promoteThinkingToolCalls(msg);
+
+    const toolCalls = msg.content.filter((c) => c.type === "toolCall");
+    expect(toolCalls).toHaveLength(1);
+    expect(msg.stopReason).toBe("toolUse");
+
+    const tc = toolCalls[0] as { name: string; arguments: Record<string, string> };
+    expect(tc.name).toBe("exec");
+    expect(tc.arguments.command).toBe(
+      "ls -la /home/gongdewei/work/projects/dev-working-group/ | grep agent",
+    );
   });
 });

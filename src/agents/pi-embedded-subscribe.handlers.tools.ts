@@ -311,6 +311,10 @@ export async function handleToolExecutionStart(
   const args = evt.args;
   const runId = ctx.params.runId;
 
+  console.log(
+    `[HANDLE-TOOL-EXECUTION-START] toolName="${toolName}" toolCallId="${toolCallId}" argsPreview=${JSON.stringify(args).substring(0, 200)}`,
+  );
+
   // Track start time and args for after_tool_call hook
   toolStartData.set(buildToolStartKey(runId, toolCallId), { startTime: Date.now(), args });
 
