@@ -195,6 +195,30 @@ export function isTransientNetworkError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Check if error is a non-fatal Playwright browser error that should not crash the agent loop.
+ * These errors typically occur during page navigation or dialog handling and are recoverable.
+ */
+function isPlaywrightNonFatalError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const rawMessage = (err as { message?: unknown }).message;
+  const message = typeof rawMessage === "string" ? rawMessage.toLowerCase() : "";
+
+  // Playwright dialog errors - occur when dialog is already closed or doesn't exist
+  if (message.includes("no dialog is showing")) {
+    return true;
+  }
+
+  // Other common non-fatal Playwright errors
+  if (message.includes("target closed") || message.includes("page closed")) {
+    return true;
+  }
+
+  return false;
+}
+
 export function registerUnhandledRejectionHandler(handler: UnhandledRejectionHandler): () => void {
   handlers.add(handler);
   return () => {
@@ -240,6 +264,15 @@ export function installUnhandledRejectionHandler(): void {
     if (isConfigError(reason)) {
       console.error("[openclaw] CONFIGURATION ERROR - requires fix:", formatUncaughtError(reason));
       process.exit(1);
+      return;
+    }
+
+    // Check for non-fatal Playwright errors before network errors
+    if (isPlaywrightNonFatalError(reason)) {
+      console.warn(
+        "[openclaw] Non-fatal Playwright error (continuing):",
+        formatUncaughtError(reason),
+      );
       return;
     }
 
