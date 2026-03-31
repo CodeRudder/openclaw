@@ -207,10 +207,15 @@ export async function armDialogViaPlaywright(opts: {
       if (state.armIdDialog !== armId) {
         return;
       }
-      if (opts.accept) {
-        await dialog.accept(opts.promptText);
-      } else {
-        await dialog.dismiss();
+      try {
+        if (opts.accept) {
+          await dialog.accept(opts.promptText);
+        } else {
+          await dialog.dismiss();
+        }
+      } catch {
+        // Ignore dialog handling errors (e.g., "No dialog is showing" if already closed)
+        // These are non-fatal and should not crash the agent loop
       }
     })
     .catch(() => {
