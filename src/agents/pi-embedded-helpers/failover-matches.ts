@@ -17,6 +17,7 @@ const ERROR_PATTERNS = {
     "tokens per day",
     // Zhipu AI (智谱 AI) rate limit errors
     /llm error 1302/i,
+    /"code"\s*:\s*"1302"/i,
     /达到速率限制/i,
     /请您控制请求频率/i,
   ],
