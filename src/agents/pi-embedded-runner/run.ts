@@ -87,6 +87,16 @@ const COPILOT_REFRESH_RETRY_MS = 60 * 1000;
 const COPILOT_REFRESH_MIN_DELAY_MS = 5 * 1000;
 // Keep overload pacing noticeable enough to avoid tight retry bursts, but short
 // enough that fallback still feels responsive within a single turn.
+// Same-model retry backoff for rate_limit and timeout errors when no profile rotation
+// or model fallback is available. Keeps retries bounded so the loop doesn't spin forever.
+const SAME_MODEL_RETRY_BACKOFF_POLICY: BackoffPolicy = {
+  initialMs: 1_000,
+  maxMs: 8_000,
+  factor: 2,
+  jitter: 0.1,
+};
+const MAX_SAME_MODEL_RETRIES = 3;
+
 const OVERLOAD_FAILOVER_BACKOFF_POLICY: BackoffPolicy = {
   initialMs: 250,
   maxMs: 1_500,
@@ -750,6 +760,7 @@ export async function runEmbeddedPiAgent(
       let autoCompactionCount = 0;
       let runLoopIterations = 0;
       let overloadFailoverAttempts = 0;
+      let sameModelRetryAttempts = 0;
       const maybeMarkAuthProfileFailure = async (failure: {
         profileId?: string;
         reason?: AuthProfileFailureReason | null;
@@ -1450,10 +1461,42 @@ export async function runEmbeddedPiAgent(
 
             // Throw FailoverError for retryable errors (rate_limit, timeout, overloaded)
             // even without fallback config, so the retry mechanism can work.
+            // Also retry on explicit timeout (timedOut=true), regardless of whether
+            // classifyFailoverReason matched the abort message.
             const isRetryableError =
               assistantFailoverReason === "rate_limit" ||
               assistantFailoverReason === "timeout" ||
-              assistantFailoverReason === "overloaded";
+              assistantFailoverReason === "overloaded" ||
+              timedOut;
+
+            // When no profile rotation is possible but the error is retryable,
+            // try the same model with exponential backoff before giving up.
+            // This handles cases where the provider has a temporary rate limit
+            // or overload condition that may resolve after a short delay.
+            if (isRetryableError && sameModelRetryAttempts < MAX_SAME_MODEL_RETRIES) {
+              sameModelRetryAttempts += 1;
+              const delayMs = computeBackoff(
+                SAME_MODEL_RETRY_BACKOFF_POLICY,
+                sameModelRetryAttempts,
+              );
+              log.warn(
+                `same-model retry for ${provider}/${modelId}: attempt=${sameModelRetryAttempts}/${MAX_SAME_MODEL_RETRIES} reason=${assistantFailoverReason ?? "unknown"} delayMs=${delayMs}`,
+              );
+              try {
+                await sleepWithAbort(delayMs, params.abortSignal);
+              } catch {
+                // Aborted during backoff
+                throw new FailoverError("Request was aborted.", {
+                  reason: "timeout",
+                  provider,
+                  model: modelId,
+                  profileId: lastProfileId,
+                });
+              }
+              logAssistantFailoverDecision("same_model_retry");
+              continue;
+            }
+
             if (fallbackConfigured || isRetryableError) {
               await maybeBackoffBeforeOverloadFailover(assistantFailoverReason);
               // Prefer formatted error message (user-friendly) over raw errorMessage

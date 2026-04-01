@@ -29,6 +29,10 @@ const ERROR_PATTERNS = {
     // provider-overload (#32828).
     /service[_ ]unavailable.*(?:overload|capacity|high[_ ]demand)|(?:overload|capacity|high[_ ]demand).*service[_ ]unavailable/i,
     "high demand",
+    // Zhipu AI (智谱 AI) overloaded error code 1305
+    /llm error 1305/i,
+    /"code"\s*:\s*"1305"/i,
+    /访问量过大/i,
   ],
   timeout: [
     "timeout",
@@ -60,6 +64,9 @@ const ERROR_PATTERNS = {
     /llm error api_error/i,
     /internal network failure/i,
     /网络错误/i,
+    // Abort triggered by LLM request timeout — classified as timeout so the
+    // retry mechanism can automatically retry the request.
+    "request was aborted",
   ],
   billing: [
     /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|\b(?:got|returned|received)\s+(?:a\s+)?402\b|^\s*402\s+payment/i,

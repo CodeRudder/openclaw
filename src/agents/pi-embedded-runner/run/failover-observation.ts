@@ -9,7 +9,7 @@ import { log } from "../logger.js";
 
 export type FailoverDecisionLoggerInput = {
   stage: "prompt" | "assistant";
-  decision: "rotate_profile" | "fallback_model" | "surface_error";
+  decision: "rotate_profile" | "fallback_model" | "surface_error" | "same_model_retry";
   runId?: string;
   rawError?: string;
   failoverReason: FailoverReason | null;
