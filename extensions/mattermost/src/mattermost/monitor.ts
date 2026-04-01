@@ -615,8 +615,8 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       // Group chat: add processing hints
       const isQueuedMessage = cleanedBodyText.includes("[Queued messages while agent was busy]");
       const groupHints = isQueuedMessage
-        ? `\n\n[群聊消息处理提示] 这是队列合并消息。忽略其它Agent的分析内容，只关注@你的原始消息。快速判断是否需要回复。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记并@接收Agent，然后发送消息内容，发送完消息后继续处理未完成的任务。\n\n`
-        : `[群聊消息处理提示] 忽略消息中其它Agent的分析过程，只关注与你相关的@消息或问题。不需要回复时仅输出NO_REPLY。需要回复时在消息开头添加[GROUP-CHAT]标记并@接收Agent，然后发送消息内容，发送完消息后继续处理未完成的任务。\n\n`;
+        ? `\n\n[群聊消息处理提示] 这是队列合并消息。忽略其它Agent的分析内容，只关注@你的原始消息。快速判断是否需要回复。不需要回复时仅输出NO_REPLY。需要回复时可以：1) 使用message tool发送消息并@接收Agent，或 2) 在消息开头添加[GROUP-CHAT]标记并@接收Agent后发送。发送完消息后继续处理未完成的任务。\n\n`
+        : `[群聊消息处理提示] 忽略消息中其它Agent的分析过程，只关注与你相关的@消息或问题。不需要回复时仅输出NO_REPLY。需要回复时可以：1) 使用message tool发送消息并@接收Agent，或 2) 在消息开头添加[GROUP-CHAT]标记并@接收Agent后发送。发送完消息后继续处理未完成的任务。\n\n`;
 
       if (isQueuedMessage) {
         // Insert hints after "[Queued messages while agent was busy]" line
@@ -785,14 +785,25 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           const mediaUrls = payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : []);
           let text = core.channel.text.convertMarkdownTables(payload.text ?? "", tableMode);
 
-          // Group chat: block auto-extracted replies — only message tool sends to groups.
+          // Group chat: allow if [GROUP-CHAT] prefix present, otherwise block auto-extracted replies.
           const isGroupChat = kind !== "direct";
           if (isGroupChat) {
+            const firstLine = text.split("\n")[0] ?? "";
+            const hasGroupChatPrefix = firstLine.includes("[GROUP-CHAT]");
+            if (!hasGroupChatPrefix) {
+              console.log(
+                `[GROUP-CHAT-DEBUG] deliver BLOCKED: auto-extracted reply without [GROUP-CHAT] prefix dropped, text preview: "${text.substring(0, 120)}"`,
+              );
+              runtime.log?.(
+                `dropped auto-extracted group chat reply (missing [GROUP-CHAT] prefix)`,
+              );
+              return;
+            }
+            // Strip [GROUP-CHAT] prefix before sending
+            text = text.replace(/\[GROUP-CHAT\]\s*/g, "").trim();
             console.log(
-              `[GROUP-CHAT-DEBUG] deliver BLOCKED: auto-extracted reply dropped for group chat, text preview: "${text.substring(0, 120)}"`,
+              `[GROUP-CHAT-DEBUG] deliver ALLOWED: [GROUP-CHAT] prefix found, text preview: "${text.substring(0, 120)}"`,
             );
-            runtime.log?.(`dropped auto-extracted group chat reply`);
-            return;
           }
 
           if (mediaUrls.length === 0) {

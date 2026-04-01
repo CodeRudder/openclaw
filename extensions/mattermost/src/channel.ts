@@ -251,6 +251,7 @@ export const mattermostPlugin: ChannelPlugin<ResolvedMattermostAccount> = {
     messageToolHints: () => [
       "",
       "**群聊发送规范**：",
+      "- 可使用 message tool 发送，或在消息开头添加 [GROUP-CHAT] 标记",
       "- 消息会通知被@的成员，避免发送无价值内容",
       "- 禁止发送：分析过程、思考内容、对消息的分析",
       "- 不需回复时输出 NO_REPLY",
