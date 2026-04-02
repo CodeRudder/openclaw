@@ -412,7 +412,7 @@ describe("routeReply", () => {
   it("passes mirror data when sessionKey is set", async () => {
     mocks.deliverOutboundPayloads.mockResolvedValue([]);
     await routeReply({
-      payload: { text: "hi" },
+      payload: { text: "[GROUP-CHAT] hi" },
       channel: "slack",
       to: "channel:C123",
       sessionKey: "agent:main:main",
@@ -424,12 +424,32 @@ describe("routeReply", () => {
       expect.objectContaining({
         mirror: expect.objectContaining({
           sessionKey: "agent:main:main",
-          text: "hi",
+          text: "hi", // prefix stripped
           isGroup: true,
           groupId: "channel:C123",
         }),
       }),
     );
+    // Verify the prefix was stripped from the payload text too
+    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloads: [expect.objectContaining({ text: "hi" })],
+      }),
+    );
+  });
+
+  it("drops group messages without [GROUP-CHAT] prefix", async () => {
+    mocks.deliverOutboundPayloads.mockClear();
+    const result = await routeReply({
+      payload: { text: "hi" },
+      channel: "slack",
+      to: "channel:C123",
+      isGroup: true,
+      groupId: "channel:C123",
+      cfg: {} as never,
+    });
+    expect(result).toEqual({ ok: true });
+    expect(mocks.deliverOutboundPayloads).not.toHaveBeenCalled();
   });
 
   it("skips mirror data when mirror is false", async () => {

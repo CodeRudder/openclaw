@@ -132,6 +132,23 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
     return { ok: true };
   }
 
+  // Group chat: require [GROUP-CHAT] prefix for auto-routed replies.
+  // This mirrors the check in monitor.ts:deliver for the dispatcher path.
+  // Without this check, routeReply bypasses the monitor's deliver callback
+  // and sends directly via channel.outbound.sendText.
+  if (params.isGroup) {
+    const firstLine = text.split("\n")[0] ?? "";
+    const hasGroupChatPrefix = firstLine.includes("[GROUP-CHAT]");
+    if (!hasGroupChatPrefix) {
+      // Silently drop auto-routed group chat replies without [GROUP-CHAT] prefix.
+      // This prevents agent analysis/progress messages from flooding group chats.
+      return { ok: true };
+    }
+    // Strip [GROUP-CHAT] prefix before sending - update both text and normalized
+    text = text.replace(/\[GROUP-CHAT\]\s*/g, "").trim();
+    normalized.text = text;
+  }
+
   if (channel === INTERNAL_MESSAGE_CHANNEL) {
     return {
       ok: false,
