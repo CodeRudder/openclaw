@@ -213,6 +213,7 @@ export async function runChunkedWhatsAppDelivery(params: {
     params: DeliverOutboundPayloadsParams,
   ) => Promise<OutboundDeliveryResult[]>;
   mirror?: DeliverOutboundPayloadsParams["mirror"];
+  payloads?: DeliverOutboundPayloadsParams["payloads"];
 }) {
   const sendWhatsApp = vi
     .fn<NonNullable<OutboundSendDeps["sendWhatsApp"]>>()
@@ -225,7 +226,7 @@ export async function runChunkedWhatsAppDelivery(params: {
     cfg,
     channel: "whatsapp",
     to: "+1555",
-    payloads: [{ text: "abcd" }],
+    payloads: params.payloads ?? [{ text: "abcd" }],
     deps: { sendWhatsApp },
     ...(params.mirror ? { mirror: params.mirror } : {}),
   });

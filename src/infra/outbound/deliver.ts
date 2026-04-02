@@ -693,6 +693,26 @@ async function deliverOutboundPayloadsCore(
   }
   for (const payload of normalizedPayloads) {
     let payloadSummary = buildPayloadSummary(payload);
+
+    // Group chat: require [GROUP-CHAT] prefix for auto-routed replies.
+    // This mirrors the check in monitor.ts:deliver and route-reply.ts.
+    // Without this check, messages sent via deliverOutboundPayloads bypass
+    // the monitor's deliver callback and routeReply's group check.
+    if (mirrorIsGroup) {
+      const firstLine = (payloadSummary.text ?? "").split("\n")[0] ?? "";
+      const hasGroupChatPrefix = firstLine.includes("[GROUP-CHAT]");
+      if (!hasGroupChatPrefix) {
+        // Silently drop auto-routed group chat replies without [GROUP-CHAT] prefix.
+        // This prevents agent analysis/progress messages from flooding group chats.
+        continue;
+      }
+      // Strip [GROUP-CHAT] prefix before sending
+      payloadSummary = {
+        ...payloadSummary,
+        text: (payloadSummary.text ?? "").replace(/\[GROUP-CHAT\]\s*/g, "").trim(),
+      };
+    }
+
     try {
       throwIfAborted(abortSignal);
 
