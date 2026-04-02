@@ -283,19 +283,39 @@ export const mattermostPlugin: ChannelPlugin<ResolvedMattermostAccount> = {
       return { ok: true, to: trimmed };
     },
     sendText: async ({ to, text, accountId, replyToId }) => {
-      // Message tool sends are always allowed through — no group chat prefix check.
-      // Strip [GROUP-CHAT] prefix if present but never block.
-      let filteredText = (text ?? "").replace("[GROUP-CHAT]", "").trim();
-      const result = await sendMessageMattermost(to, filteredText, {
+      // Group chat: require [GROUP-CHAT] prefix for channel targets.
+      // This prevents auto-routed messages from flooding group chats.
+      const isGroupTarget = to.toLowerCase().startsWith("channel:");
+      if (isGroupTarget) {
+        const firstLine = (text ?? "").split("\n")[0] ?? "";
+        const hasGroupChatPrefix = firstLine.includes("[GROUP-CHAT]");
+        if (!hasGroupChatPrefix) {
+          // Silently drop group chat messages without [GROUP-CHAT] prefix.
+          return { channel: "mattermost", messageId: "", channelId: "" };
+        }
+        // Strip [GROUP-CHAT] prefix before sending
+        text = (text ?? "").replace(/\[GROUP-CHAT\]\s*/g, "").trim();
+      }
+      const result = await sendMessageMattermost(to, text ?? "", {
         accountId: accountId ?? undefined,
         replyToId: replyToId ?? undefined,
       });
       return { channel: "mattermost", ...result };
     },
     sendMedia: async ({ to, text, mediaUrl, accountId, replyToId }) => {
-      // Message tool sends are always allowed through — no group chat prefix check.
-      let filteredText = (text ?? "").replace("[GROUP-CHAT]", "").trim();
-      const result = await sendMessageMattermost(to, filteredText, {
+      // Group chat: require [GROUP-CHAT] prefix for channel targets.
+      const isGroupTarget = to.toLowerCase().startsWith("channel:");
+      if (isGroupTarget) {
+        const firstLine = (text ?? "").split("\n")[0] ?? "";
+        const hasGroupChatPrefix = firstLine.includes("[GROUP-CHAT]");
+        if (!hasGroupChatPrefix) {
+          // Silently drop group chat messages without [GROUP-CHAT] prefix.
+          return { channel: "mattermost", messageId: "", channelId: "" };
+        }
+        // Strip [GROUP-CHAT] prefix before sending
+        text = (text ?? "").replace(/\[GROUP-CHAT\]\s*/g, "").trim();
+      }
+      const result = await sendMessageMattermost(to, text ?? "", {
         accountId: accountId ?? undefined,
         mediaUrl,
         replyToId: replyToId ?? undefined,
