@@ -19,10 +19,12 @@ const { deliverOutboundPayloads } = await import("./deliver.js");
 
 async function runChunkedWhatsAppDelivery(params?: {
   mirror?: Parameters<typeof deliverOutboundPayloads>[0]["mirror"];
+  payloads?: Parameters<typeof deliverOutboundPayloads>[0]["payloads"];
 }) {
   return await runChunkedWhatsAppDeliveryHelper({
     deliverOutboundPayloads,
     ...(params?.mirror ? { mirror: params.mirror } : {}),
+    ...(params?.payloads ? { payloads: params.payloads } : {}),
   });
 }
 
@@ -147,6 +149,8 @@ describe("deliverOutboundPayloads lifecycle", () => {
 
   it("emits internal message:sent hook with success=true for chunked payload delivery", async () => {
     const { sendWhatsApp } = await runChunkedWhatsAppDelivery({
+      // Use payloads with [GROUP-CHAT] prefix since mirror.isGroup is true
+      payloads: [{ text: "[GROUP-CHAT] abcd" }],
       mirror: {
         sessionKey: "agent:main:main",
         isGroup: true,
@@ -161,7 +165,7 @@ describe("deliverOutboundPayloads lifecycle", () => {
       "sent",
       "agent:main:main",
       expectSuccessfulWhatsAppInternalHookPayload({
-        content: "abcd",
+        content: "abcd", // prefix stripped before sending
         messageId: "w2",
         isGroup: true,
         groupId: "whatsapp:group:123",
